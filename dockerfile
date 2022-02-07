@@ -1,31 +1,42 @@
-# 1) choose base container
-# generally use the most recent tag
+# base image
+FROM ubuntu:16.04
 
-# base notebook, contains Jupyter and relevant tools
-#ARG BASE_CONTAINER=ucsdets/datahub-base-notebook:2021.2-stable
+RUN apt-get update
+RUN apt-get install software-properties-common -y
+RUN add-apt-repository ppa:deadsnakes/ppa -y
+RUN apt-get update
+RUN apt-get install default-jre -y
+RUN apt-get install default-jdk -y
+RUN apt-get install -y curl openssh-client vim
 
-# data science notebook
-# https://hub.docker.com/repository/docker/ucsdets/datascience-notebook/tags
-#ARG BASE_CONTAINER=ucsdets/scipy-ml-notebook:2021.2-stable
+# define spark and hadoop versions
+ENV HADOOP_VERSION 2.7.3
+ENV SPARK_VERSION 2.4.4
+ENV PATH $PATH:/opt/spark/bin
 
-# scipy/machine learning (tensorflow, pytorch)
-# https://hub.docker.com/repository/docker/ucsdets/scipy-ml-notebook/tags
-ARG BASE_CONTAINER=ucsdets/scipy-ml-notebook:2021.3-42158c8
+# download and install hadoop
+RUN mkdir -p /opt && \
+    cd /opt && \
+    curl http://archive.apache.org/dist/hadoop/common/hadoop-${HADOOP_VERSION}/hadoop-${HADOOP_VERSION}.tar.gz | \
+        tar -zx hadoop-${HADOOP_VERSION}/lib/native && \
+    ln -s hadoop-${HADOOP_VERSION} hadoop && \
+    echo Hadoop ${HADOOP_VERSION} native libraries installed in /opt/hadoop/lib/native
 
-FROM $BASE_CONTAINER
+# download and install spark
+RUN mkdir -p /opt && \
+    cd /opt && \
+    curl http://archive.apache.org/dist/spark/spark-${SPARK_VERSION}/spark-${SPARK_VERSION}-bin-hadoop2.7.tgz | \
+        tar -zx && \
+    ln -s spark-${SPARK_VERSION}-bin-hadoop2.7 spark && \
+    echo Spark ${SPARK_VERSION} installed in /opt
 
-LABEL maintainer="UC San Diego ITS/ETS <ets-consult@ucsd.edu>"
+# add scripts and update spark default config
+ADD common.sh spark-master spark-worker /
+ADD spark-defaults.conf /opt/spark/conf/spark-defaults.conf
 
-# 2) change to root to install packages
-USER root
+RUN apt-get install -y python3.6 python3-pip
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.6 1
+RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.6 1
 
-# 3) install packages using notebook user
-USER jovyan
-
-# RUN conda install -y scikit-learn
-COPY requirements.txt /tmp
-WORKDIR /tmp
-RUN pip install --no-cache-dir -r requirements.txt --user
-
-# Override command to disable running jupyter notebook at launch
-# CMD ["/bin/bash"]
+ADD requirements.txt /
+RUN python3 -m pip install -r requirements.txt
